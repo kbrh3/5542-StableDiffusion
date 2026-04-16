@@ -28,7 +28,8 @@ def save_group(pipe, group_name, prompt_items):
         if item["negative_prompt"]:
             kwargs["negative_prompt"] = item["negative_prompt"]
 
-        image = pipe(**kwargs).images[0]
+        generator = torch.manual_seed(42)
+        image = pipe(**kwargs,generator=generator).images[0]
         filename = f"{i}_{item['label']}.png"
         image.save(os.path.join(out_dir, filename))
         print(f"Saved {group_name}/{filename}")
