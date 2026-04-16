@@ -9,6 +9,9 @@ from torchvision.models import resnet18, ResNet18_Weights
 from transformers import CLIPProcessor, CLIPModel
 from skimage.metrics import structural_similarity as ssim
 
+from products import products
+from prompts import get_shoe_prompts, get_perfume_prompts, get_witch_prompts
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
@@ -25,6 +28,8 @@ img_transform = transforms.Compose([
 
 
 def load_image(path):
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Missing image: {path}")
     return Image.open(path).convert("RGB")
 
 
@@ -38,7 +43,13 @@ def cosine_similarity(a, b):
 
 
 def get_clip_alignment_score(image, prompt):
-    inputs = clip_processor(text=[prompt], images=image, return_tensors="pt", padding=True).to(device)
+    inputs = clip_processor(
+        text=[prompt],
+        images=image,
+        return_tensors="pt",
+        padding=True
+    ).to(device)
+
     with torch.no_grad():
         outputs = clip_model(**inputs)
         img_emb = outputs.image_embeds[0]
@@ -95,6 +106,7 @@ def evaluate_group(group_name, image_paths, prompts, labels):
     for i, j in itertools.combinations(range(len(image_paths)), 2):
         img1 = load_image(image_paths[i])
         img2 = load_image(image_paths[j])
+
         emb1 = get_resnet_embedding(img1)
         emb2 = get_resnet_embedding(img2)
 
@@ -108,7 +120,8 @@ def evaluate_group(group_name, image_paths, prompts, labels):
             "diversity_1_minus_ssim": 1.0 - ssim_val,
         })
 
-    return df, pd.DataFrame(pair_rows)
+    pair_df = pd.DataFrame(pair_rows)
+    return df, pair_df
 
 
 def summarize_metrics(df, pair_df, group_name):
@@ -124,3 +137,66 @@ def summarize_metrics(df, pair_df, group_name):
     }])
 
     return summary.round(3)
+
+
+def save_metrics(df, pair_df, summary_df, group_name):
+    os.makedirs("metrics", exist_ok=True)
+    df.to_csv(f"metrics/{group_name}_per_image_metrics.csv", index=False)
+    pair_df.to_csv(f"metrics/{group_name}_pairwise_metrics.csv", index=False)
+    summary_df.to_csv(f"metrics/{group_name}_summary.csv", index=False)
+
+
+def main():
+    os.makedirs("metrics", exist_ok=True)
+
+    # =========================
+    # SHOES
+    # =========================
+    shoe_prompt_items = get_shoe_prompts(products[0])
+    shoe_paths = [f"outputs/shoes/{i+1}_{item['label']}.png" for i, item in enumerate(shoe_prompt_items)]
+    shoe_prompts = [item["prompt"] for item in shoe_prompt_items]
+    shoe_labels = [item["label"] for item in shoe_prompt_items]
+
+    shoe_df, shoe_pair_df = evaluate_group("shoes", shoe_paths, shoe_prompts, shoe_labels)
+    shoe_summary = summarize_metrics(shoe_df, shoe_pair_df, "shoes")
+    save_metrics(shoe_df, shoe_pair_df, shoe_summary, "shoes")
+
+    # =========================
+    # PERFUME
+    # =========================
+    perfume_prompt_items = get_perfume_prompts(products[1])
+    perfume_paths = [f"outputs/perfume/{i+1}_{item['label']}.png" for i, item in enumerate(perfume_prompt_items)]
+    perfume_prompts = [item["prompt"] for item in perfume_prompt_items]
+    perfume_labels = [item["label"] for item in perfume_prompt_items]
+
+    perfume_df, perfume_pair_df = evaluate_group("perfume", perfume_paths, perfume_prompts, perfume_labels)
+    perfume_summary = summarize_metrics(perfume_df, perfume_pair_df, "perfume")
+    save_metrics(perfume_df, perfume_pair_df, perfume_summary, "perfume")
+
+    # =========================
+    # WITCH HAT
+    # =========================
+    witch_prompt_items = get_witch_prompts(products[2])
+    witch_paths = [f"outputs/witch_hat/{i+1}_{item['label']}.png" for i, item in enumerate(witch_prompt_items)]
+    witch_prompts = [item["prompt"] for item in witch_prompt_items]
+    witch_labels = [item["label"] for item in witch_prompt_items]
+
+    witch_df, witch_pair_df = evaluate_group("witch_hat", witch_paths, witch_prompts, witch_labels)
+    witch_summary = summarize_metrics(witch_df, witch_pair_df, "witch_hat")
+    save_metrics(witch_df, witch_pair_df, witch_summary, "witch_hat")
+
+    # =========================
+    # FINAL SUMMARY
+    # =========================
+    final_summary = pd.concat(
+        [shoe_summary, perfume_summary, witch_summary],
+        ignore_index=True
+    )
+    final_summary.to_csv("metrics/final_summary.csv", index=False)
+
+    print("\n=== FINAL SUMMARY ===")
+    print(final_summary.to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()
