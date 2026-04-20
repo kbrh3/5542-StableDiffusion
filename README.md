@@ -94,6 +94,6 @@ but tradeoffs remain between consistency and diversity.
 ---
 
 ## Demo Video
-(video link here - do not forget this girl)
+((https://youtu.be/2ytATxxPfC4))
 
 ---
